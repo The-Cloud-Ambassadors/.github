@@ -186,6 +186,47 @@ def aggregate(repos: list[str]) -> dict[str, Contributor]:
     return totals
 
 
+# ── Avatar fetching (base64 embed) ────────────────────────────────────────────
+def fetch_avatar_b64(url: str, size: int = 80) -> str:
+    """
+    Download a GitHub avatar and return a base64 data URI string.
+    Falls back to empty string on any error so the SVG still renders.
+    """
+    if not url:
+        return ""
+    try:
+        resp = requests.get(f"{url}&s={size}", timeout=10, headers={"User-Agent": "leaderboard-bot"})
+        resp.raise_for_status()
+        mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        import base64
+        b64 = base64.b64encode(resp.content).decode("utf-8")
+        return f"data:{mime};base64,{b64}"
+    except Exception as exc:
+        log.warning("Avatar fetch failed for %s: %s", url, exc)
+        return ""
+
+
+def prefetch_avatars(ranked: list["Contributor"]) -> dict[str, str]:
+    """Fetch all avatars concurrently. Returns { avatar_url: data_uri }."""
+    log.info("Prefetching %d avatars...", len(ranked))
+    results: dict[str, str] = {}
+
+    def _fetch(c: "Contributor") -> tuple[str, str]:
+        return c.avatar_url, fetch_avatar_b64(c.avatar_url)
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch, c): c for c in ranked}
+        for future in as_completed(futures):
+            try:
+                url, data_uri = future.result()
+                results[url] = data_uri
+            except Exception as exc:
+                log.warning("Avatar prefetch error: %s", exc)
+
+    log.info("Avatars fetched: %d/%d succeeded.", sum(1 for v in results.values() if v), len(ranked))
+    return results
+
+
 # ── SVG builder ───────────────────────────────────────────────────────────────
 def _x(text: str) -> str:
     """XML-escape a string."""
@@ -205,9 +246,10 @@ def _progress_bar(x: int, y: int, w: int, pct: float, color: str) -> str:
     )
 
 
-def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: int) -> str:
-    now   = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
-    max_c = ranked[0].total_commits if ranked else 1
+def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: int, avatar_map: Optional[dict] = None) -> str:
+    now       = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    max_c     = ranked[0].total_commits if ranked else 1
+    av        = avatar_map or {}   # { avatar_url: base64_data_uri }
 
     # ── Layout ────────────────────────────────────────────────────────────────
     HEADER_H  = 76
@@ -312,10 +354,11 @@ def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: i
             f'<circle cx="{COL_X + 54}" cy="{cy}" r="23" '
             f'fill="{badge_col}" opacity="0.2"/>'
         )
-        # Real GitHub profile picture
-        if c.avatar_url:
+        # Real GitHub profile picture (base64 embedded — GitHub strips external hrefs in SVGs)
+        data_uri = av.get(c.avatar_url, "")
+        if data_uri:
             L.append(
-                f'<image href="{_x(c.avatar_url)}&amp;s=88" '
+                f'<image href="{data_uri}" '
                 f'x="{COL_X + 32}" y="{cy - 22}" width="44" height="44" '
                 f'clip-path="url(#av{i})" preserveAspectRatio="xMidYMid slice"/>'
             )
@@ -398,9 +441,10 @@ def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: i
         L.append(
             f'<circle cx="{COL_X + 47}" cy="{cy}" r="16" fill="#D3D1C7" opacity="0.45"/>'
         )
-        if c.avatar_url:
+        data_uri = av.get(c.avatar_url, "")
+        if data_uri:
             L.append(
-                f'<image href="{_x(c.avatar_url)}&amp;s=60" '
+                f'<image href="{data_uri}" '
                 f'x="{COL_X + 32}" y="{cy - 15}" width="30" height="30" '
                 f'clip-path="url(#av{i})" preserveAspectRatio="xMidYMid slice"/>'
             )
@@ -511,7 +555,8 @@ def main() -> None:
     log.info("Total unique contributors: %d", len(contributors))
     ranked = sorted(contributors.values(), key=lambda c: c.total_commits, reverse=True)[:TOP_N]
 
-    svg_content = build_svg(ranked, len(contributors), len(repos))
+    avatar_map = prefetch_avatars(ranked)
+    svg_content = build_svg(ranked, len(contributors), len(repos), avatar_map)
 
     os.makedirs(os.path.dirname(SVG_PATH) or ".", exist_ok=True)
     with open(SVG_PATH, "w", encoding="utf-8") as fh:
