@@ -27,6 +27,7 @@ jobs:
         env:
           ORG_NAME: ${{ github.repository_owner }}
           ORG_TOKEN: ${{ secrets.ORG_TOKEN }}
+          README_PATH: profile/README.md
         run: python .github/scripts/generate_leaderboard.py
 
       - name: Commit and push changes
