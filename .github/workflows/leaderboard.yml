@@ -1,0 +1,38 @@
+name: Update Contributor Leaderboard
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # Every Monday at midnight UTC
+  workflow_dispatch:        # Allow manual trigger
+
+jobs:
+  update-leaderboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run leaderboard script
+        env:
+          ORG_NAME: ${{ github.repository_owner }}
+          ORG_TOKEN: ${{ secrets.ORG_TOKEN }}
+        run: python .github/scripts/generate_leaderboard.py
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --staged --quiet || git commit -m "chore: update contributor leaderboard [skip ci]"
+          git push
