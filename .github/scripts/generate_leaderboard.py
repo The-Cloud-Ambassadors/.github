@@ -290,11 +290,14 @@ def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: i
     )
 
     # ── Clip paths for circular avatars ───────────────────────────────────────
+    # Avatar center for top-3 is shifted right (COL_X+63) so it doesn't
+    # overlap the medal emoji, which sits at COL_X+16 with ~24 px glyph width.
+    AVATAR_CX_TOP3 = COL_X + 63  # previously COL_X+54; moved right to clear medal
     L.append("<defs>")
     yc = PAD_V + HEADER_H
     for i in range(n_top3):
         cy = yc + TOP3_H // 2
-        L.append(f'<clipPath id="av{i}"><circle cx="{COL_X + 54}" cy="{cy}" r="22"/></clipPath>')
+        L.append(f'<clipPath id="av{i}"><circle cx="{AVATAR_CX_TOP3}" cy="{cy}" r="22"/></clipPath>')
         yc += TOP3_H + TOP3_GAP
     if n_rest > 0:
         yc += DIV_H
@@ -342,16 +345,17 @@ def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: i
             f'fill="{bg}" stroke="{stroke}" stroke-width="1.2"/>'
         )
 
-        # Medal emoji
+        # Medal emoji — sits at far left, clear of avatar
         L.append(
             f'<text x="{COL_X + 16}" y="{cy + 8}" '
             f'font-family="system-ui,-apple-system,sans-serif" font-size="22">'
             f'{MEDALS[i]}</text>'
         )
 
-        # Avatar circle shadow
+        # Avatar circle shadow  (center shifted right vs medal to avoid overlap)
+        _acx = AVATAR_CX_TOP3  # = COL_X + 63
         L.append(
-            f'<circle cx="{COL_X + 54}" cy="{cy}" r="23" '
+            f'<circle cx="{_acx}" cy="{cy}" r="23" '
             f'fill="{badge_col}" opacity="0.2"/>'
         )
         # Real GitHub profile picture (base64 embedded — GitHub strips external hrefs in SVGs)
@@ -359,34 +363,35 @@ def build_svg(ranked: list[Contributor], total_contributors: int, total_repos: i
         if data_uri:
             L.append(
                 f'<image href="{data_uri}" '
-                f'x="{COL_X + 32}" y="{cy - 22}" width="44" height="44" '
+                f'x="{_acx - 22}" y="{cy - 22}" width="44" height="44" '
                 f'clip-path="url(#av{i})" preserveAspectRatio="xMidYMid slice"/>'
             )
         else:
             L.append(
-                f'<text x="{COL_X + 54}" y="{cy + 1}" text-anchor="middle" '
+                f'<text x="{_acx}" y="{cy + 1}" text-anchor="middle" '
                 f'dominant-baseline="middle" font-family="system-ui,sans-serif" '
                 f'font-size="14" font-weight="700" fill="{badge_col}">'
                 f'{_x(c.initials)}</text>'
             )
 
+        _txt_x = _acx + 30  # username starts 30 px right of avatar centre
         # Username (clickable link)
         L.append(
             f'<a href="{_x(c.profile_url)}" target="_blank">'
-            f'<text x="{COL_X + 90}" y="{cy - 10}" '
+            f'<text x="{_txt_x}" y="{cy - 10}" '
             f'font-family="system-ui,-apple-system,sans-serif" '
             f'font-size="15" font-weight="700" fill="{name_col}">'
             f'@{_x(c.login)}</text></a>'
         )
         # Repos contributed label
         L.append(
-            f'<text x="{COL_X + 90}" y="{cy + 9}" '
+            f'<text x="{_txt_x}" y="{cy + 9}" '
             f'font-family="system-ui,-apple-system,sans-serif" '
             f'font-size="11" fill="{sub_col}">'
             f'{c.repo_count} repos contributed</text>'
         )
-        # Progress bar
-        L.append(_progress_bar(COL_X + 90, cy + 20, 230, pct, bar_col))
+        # Progress bar — width reduced to keep within the badge on the right
+        L.append(_progress_bar(_txt_x, cy + 20, 215, pct, bar_col))
 
         # Commit count badge (right side)
         bx = COL_X + COL_W - 105
