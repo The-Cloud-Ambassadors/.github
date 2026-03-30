@@ -2,7 +2,7 @@
 <h3 align="center"> Maximizing cloud impact through sensible engineering</h3>
 
 <p align="center">
-  <img align="center" src="https://github.com/user-attachments/assets/4d914626-3726-4190-8b14-376f5f14d5fc" alt="ca-img" class="ca-img">
+  <img align="center" width="1600" height="385" alt="Cloud Ambassadors" src="https://github.com/user-attachments/assets/4b222563-8622-430f-8af2-f12d815109d8" />
 </p>
 
 <!-- LEADERBOARD_START -->
